@@ -1,0 +1,29 @@
+# Gradle files
+.gradle/
+build/
+app/build/
+
+# Local configuration files
+local.properties
+
+# Signing secrets (Keystore & passwords)
+*.jks
+keystore.properties
+
+# Android Studio and IntelliJ IDEA files
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# NDK / C++ build output
+.cxx/
+.externalNativeBuild/
+
+# OS generated files
+Thumbs.db
+.DS_Store
+
+# Log files
+*.log
