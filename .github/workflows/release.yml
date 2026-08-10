@@ -1,0 +1,106 @@
+name: Build & Release APK
+
+on:
+  # Trigger manually from GitHub Actions tab
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+  # Also trigger on version tags like v1.0.0
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build Signed Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Set up Java 17 (required for this project)
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      # 3. Download the gradle-wrapper.jar (it's not in the repo)
+      - name: Download Gradle Wrapper JAR
+        run: |
+          mkdir -p gradle/wrapper
+          curl -sSL "https://github.com/gradle/gradle/raw/v8.0.0/gradle/wrapper/gradle-wrapper.jar" \
+            -o gradle/wrapper/gradle-wrapper.jar
+
+      # 4. Make gradlew executable
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # 5. Decode the keystore from GitHub Secret (base64 encoded)
+      - name: Decode Keystore
+        run: |
+          mkdir -p keystore
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore/holdtune-release.jks
+
+      # 6. Create keystore.properties from secrets
+      - name: Create keystore.properties
+        run: |
+          cat > keystore.properties << EOF
+          storeFile=keystore/holdtune-release.jks
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+
+      # 7. Set up Android SDK (NDK needed for C++ code)
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: sdkmanager "ndk;25.2.9519653" "cmake;3.22.1"
+
+      # 8. Build the signed release APK
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --stacktrace
+
+      # 9. Rename APK to include version
+      - name: Rename APK
+        run: |
+          VERSION=${{ github.event.inputs.version || github.ref_name }}
+          mv app/build/outputs/apk/release/app-release.apk \
+             app/build/outputs/apk/release/HoldTune-${VERSION}.apk
+
+      # 10. Create GitHub Release and upload APK
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
+          name: HoldTune ${{ github.event.inputs.version || github.ref_name }}
+          body: |
+            ## 📱 HoldTune - Play music during phone calls on hold
+
+            ### How to install:
+            1. Download `HoldTune-*.apk` below
+            2. On your Android phone, go to **Settings → Security → Install unknown apps**
+            3. Allow installs from your browser/file manager
+            4. Open the downloaded APK and tap **Install**
+
+            ### Requirements:
+            - Android 8.0 (Oreo) or higher
+            - Grant phone & audio permissions when prompted
+
+            ### Permissions needed:
+            - 📞 Phone state & call management
+            - 🎵 Audio playback & settings
+            - 👤 Contacts (optional, for caller display)
+          files: app/build/outputs/apk/release/HoldTune-*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
